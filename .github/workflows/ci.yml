@@ -1,0 +1,133 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  test:
+    name: 테스트 실행
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: 코드 체크아웃
+      uses: actions/checkout@v4
+
+    - name: Node.js 설정
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+        cache-dependency-path: './idea-manager/package-lock.json'
+
+    - name: 의존성 설치
+      working-directory: ./idea-manager
+      run: npm ci
+
+    - name: 린트 검사
+      working-directory: ./idea-manager
+      run: npm run lint
+
+    - name: 타입 체크
+      working-directory: ./idea-manager
+      run: npm run tsc
+
+    - name: 테스트 실행
+      working-directory: ./idea-manager
+      run: npm run test
+
+    - name: 빌드 테스트
+      working-directory: ./idea-manager
+      run: npm run build
+
+  build-and-deploy:
+    name: 빌드 및 배포
+    needs: test
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+
+    steps:
+    - name: 코드 체크아웃
+      uses: actions/checkout@v4
+
+    - name: Node.js 설정
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+        cache-dependency-path: './idea-manager/package-lock.json'
+
+    - name: 의존성 설치
+      working-directory: ./idea-manager
+      run: npm ci
+
+    - name: 프로덕션 빌드
+      working-directory: ./idea-manager
+      run: npm run build
+
+    - name: GitHub Pages 배포
+      uses: peaceiris/actions-gh-pages@v3
+      if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+      with:
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+        publish_dir: ./idea-manager/dist
+        cname: idea-manager.your-domain.com  # 커스텀 도메인이 있다면 수정
+
+  code-quality:
+    name: 코드 품질 검사
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: 코드 체크아웃
+      uses: actions/checkout@v4
+
+    - name: Node.js 설정
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+        cache-dependency-path: './idea-manager/package-lock.json'
+
+    - name: 의존성 설치
+      working-directory: ./idea-manager
+      run: npm ci
+
+    - name: 코드 커버리지 측정
+      working-directory: ./idea-manager
+      run: npm run test:coverage
+
+    - name: CodeClimate에 커버리지 보고
+      uses: paambaati/codeclimate-action@v5.0.0
+      if: github.event_name == 'push'
+      env:
+        CC_TEST_REPORTER_ID: ${{ secrets.CC_TEST_REPORTER_ID }}
+      with:
+        coverageLocations: |
+          ./idea-manager/coverage/lcov.info:lcov
+
+  security:
+    name: 보안 취약점 검사
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: 코드 체크아웃
+      uses: actions/checkout@v4
+
+    - name: Node.js 설정
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+
+    - name: npm audit 실행
+      working-directory: ./idea-manager
+      run: npm audit --audit-level high
+
+    - name: Snyk 보안 검사
+      uses: snyk/actions/node@master
+      env:
+        SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+      with:
+        args: --severity-threshold=high
+        command: test
